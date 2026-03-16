@@ -1,0 +1,69 @@
+:root {
+    --primary-color: #0D2339;
+    --primary-color-50: rgba(13, 35, 57, 0.5);
+    --primary-text-color: #FFFFFF;
+    --secondary-color: #2b4660;
+    --secondary-color-50: rgba(43, 70, 96, 0.5);
+    --danger-color: #dc3545;
+    --background-color: #f2fafd;
+}
+
+.btn-primary {
+    background-color: var(--primary-color);
+    color: var(--primary-text-color);
+    border-color: var(--primary-color);
+
+    &:hover {
+        background-color: var(--secondary-color);
+        border-color: var(--secondary-color);
+    }
+
+    &:focus, &:active {
+        background-color: var(--secondary-color);
+        border-color: var(--secondary-color);
+        box-shadow: 0 0 0 0.2rem var(--primary-color-50);
+    }
+
+    &.disabled, &:disabled {
+        background-color: var(--primary-color);
+        border-color: var(--primary-color);
+        opacity: 0.5;
+    }
+}
+
+.btn-secondary {
+    background-color: transparent !important;
+    color: var(--primary-color);
+    border-color: var(--secondary-color);
+
+    &:hover {
+        background-color: var(--secondary-color) !important;
+        color: var(--primary-text-color);
+        border-color: var(--secondary-color);
+    }
+
+    &:focus, &:active {
+        background-color: var(--secondary-color) !important;
+        color: var(--primary-text-color);
+        border-color: var(--secondary-color);
+        box-shadow: 0 0 0 0.2rem var(--secondary-color-50);
+    }
+}
+
+.form-floating {
+    input.form-control,
+    select.form-select {
+        border-color: var(--primary-color);
+        background-color: var(--background-color);
+
+        &:focus, &:active {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 0.2rem var(--primary-color-50);
+            background-color: var(--background-color);
+        }
+
+        &.is-invalid {
+            border-color: var(--danger-color);
+        }
+    }
+}
