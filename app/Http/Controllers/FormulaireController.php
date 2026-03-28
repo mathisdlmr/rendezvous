@@ -4,10 +4,8 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\MessageBag;
 
 use App\Models\RendezVous;
-use App\Models\Departement;
 use App\Models\Restaurant;
 use App\Models\Parking;
 use App\Models\Paiement;
@@ -20,40 +18,35 @@ class FormulaireController extends Controller
 {
     protected $dataStorageService;
 
-    public function __construct(DataStorageService $dataStorageService) {
+    public function __construct(DataStorageService $dataStorageService)
+    {
         $this->dataStorageService = $dataStorageService;
     }
 
-    public function index(Request $request) {
+    public function index(Request $request)
+    {
         $this->dataStorageService->setSession($request->session());
         $step = $this->dataStorageService->getFormProgress();
 
         if ($step == 10) {
             return redirect()->route('form_success');
-        } elseif ($step > 10) {
+        }
+        elseif ($step > 10) {
             return redirect()->route('form_error');
         }
-        
-        $params = [];
-        switch ($step) {
-            case 1:
-                $patients = Patients::all();
 
-                $params = [
-                    'datalist_nom' => $patients->pluck('nom')->unique()->toArray(),
-                    'datalist_prenom' => $patients->pluck('prenom')->unique()->toArray(),
-                ];
-                break;
-        }
 
-        $params['form_data'] = $this->dataStorageService->getFormData()->toArray();
-        $params['form_state'] = $this->dataStorageService->getStepsState();
-        $params['errors'] = $this->dataStorageService->getFormErrors();
+        $params = [
+            'form_data' => $this->dataStorageService->getFormData()->toArray(),
+            'form_state' => $this->dataStorageService->getStepsState(),
+            'errors' => $this->dataStorageService->getFormErrors(),
+        ];
 
         return view('formulaire.etapes.etape' . $step, $params);
     }
 
-    public function process(Request $request) {
+    public function process(Request $request)
+    {
         $this->dataStorageService->setSession($request->session());
 
         $step = $this->dataStorageService->getFormProgress();
@@ -67,14 +60,16 @@ class FormulaireController extends Controller
         return redirect()->route('form_index');
     }
 
-    public function error(Request $request) {
+    public function error(Request $request)
+    {
         $this->dataStorageService->setSession($request->session());
         $this->dataStorageService->setFormProgress(1);
 
         return view('formulaire.error');
     }
 
-    public function prev(Request $request) {
+    public function prev(Request $request)
+    {
         $this->dataStorageService->setSession($request->session());
         $step = $this->dataStorageService->getFormProgress();
 
@@ -82,14 +77,16 @@ class FormulaireController extends Controller
         return redirect()->route('form_index');
     }
 
-    public function move(Request $request, $step) {
+    public function move(Request $request, $step)
+    {
         $this->dataStorageService->setSession($request->session());
         $this->dataStorageService->setFormProgress($step);
 
         return redirect()->route('form_index');
     }
 
-    public function success(Request $request) {
+    public function success(Request $request)
+    {
         $this->dataStorageService->setSession($request->session());
         $step = $this->dataStorageService->getFormProgress();
 
@@ -97,41 +94,54 @@ class FormulaireController extends Controller
             return redirect()->route('form_index');
         }
 
-        $form_data = $this->dataStorageService->getFormData();
+        $dto = $this->dataStorageService->getFormData();
+
         if (!$this->dataStorageService->checkAllFormData()) {
             return redirect()->route('form_error');
         }
 
-        $rendezVous = new RendezVous();
-        $rendezVous->fromDTO($form_data);
-        $rendezVous->save();
-
         $patient = new Patients();
-        $patient->fromRendezVous($rendezVous);
+        $patient->fromDTO($dto);
         $patient->save();
 
         $paiement = new Paiement();
-        $paiement->fromRendezVous($rendezVous);
+        $paiement->patient_id = $patient->id;
+        $paiement->fromDTO($dto);
         $paiement->save();
 
-        if ($rendezVous->options === 'Place de Parking' || $rendezVous->options === 'Place de Parking + Repas au restaurant') {
+        $parkingId = null;
+        $restaurantId = null;
+
+        $options = $dto->options ?? 'Rien';
+
+        if (in_array($options, ['Place de Parking', 'Place de Parking + Repas au restaurant'])) {
             $parking = new Parking();
-            $parking->fromRendezVous($rendezVous);
+            $parking->fromDTO($dto);
             $parking->save();
+            $parkingId = $parking->id;
         }
 
-        if ($rendezVous->options === 'Repas au restaurant' || $rendezVous->options === 'Place de Parking + Repas au restaurant') {
+        if (in_array($options, ['Repas au restaurant', 'Place de Parking + Repas au restaurant'])) {
             $restaurant = new Restaurant();
-            $restaurant->fromRendezVous($rendezVous);
+            $restaurant->fromDTO($dto);
             $restaurant->save();
+            $restaurantId = $restaurant->id;
         }
+
+        $rendezVous = new RendezVous();
+        $rendezVous->fromDTO($dto);
+        $rendezVous->patient_id = $patient->id;
+        $rendezVous->parking_id = $parkingId;
+        $rendezVous->restaurant_id = $restaurantId;
+        $rendezVous->save();
 
         $request->session()->flush();
 
         return view('formulaire.success');
     }
 
-    public function reset(Request $request) {
+    public function reset(Request $request)
+    {
         $request->session()->flush();
 
         return redirect()->route('form_index');
