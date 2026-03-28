@@ -1,23 +1,34 @@
-# Rendezvous — Numérique Responsable & Conformité RGPD
+# IS05 - Rendu Lot 2 (Amélioration du système de rendez-vous)
+
+## Pour le rendu
+
+Lien vers le repository : https://github.com/mathisdlmr/rendezvous.git
+
+## Rappel du sujet
+
+> "Bien que le site de prise de rendez-vous donne satisfaction, nous souhaitons un audit et une adaptation pour le rendre conforme aux normes en vigueur. Des optimisations en termes de performance et d’impact environnemental sont également souhaitées"
+
+Pour réaliser les modifications apportées, nous nous sommes majoritairement basés sur la règlementation RGPD (mais aussi d'autres règlementations trouvables dans la 6e partie du rapport), ainsi que des recommandations en éco-conception.
 
 ## 1. Minimisation des données (RGPD Art. 5(1)(c))
 
-> _"Les données doivent être adéquates, pertinentes et limitées à ce qui est nécessaire."_
+> _"Les données à caractère personnel doivent être adéquates, pertinentes et limitées à ce qui est nécessaire au regard des finalités pour lesquelles elles sont traitées (minimisation des données)."_ (RGPD Art. 5(1)(c))
 
 ### Problème
 
 La table `RendezVous` centralisait toutes les données : identité, coordonnées, antécédents médicaux, numéro de sécurité sociale, données bancaires complètes. Ces informations étaient également dupliquées dans les tables `patients` et `paiement`.
+Au délà du fait que les données n'étaient pas alors adéquatement stockées, et pas forcément toutes pertinentes, on peut aussi mentionner qu'une mauvaise conception de base de données peut ajouter des traitements inutiles, notamment lors des opérations de jointure ou de recherche dans une table (ce qui augmente donc la consommation énergétique).
 
 ### Corrections apportées
 
-| Supprimé de `RendezVous`                                                | Raison                                            | Désormais dans             |
+| Supprimé de `RendezVous`                                                | Raison                                            | Déplacé dans               |
 | ----------------------------------------------------------------------- | ------------------------------------------------- | -------------------------- |
-| `nom`, `prenom`, `sexe`, `date_naissance`                               | Données identitaires → appartiennent au patient   | `patients`                 |
+| `nom`, `prenom`, `sexe`, `date_naissance`                               | Données identitaires, appartiennent au patient    | `patients`                 |
 | `adresse`, `code_postal`, `ville`, `email`, `telephone`                 | Coordonnées personnelles non liées au RDV médical | `patients`                 |
 | `securite_sociale`                                                      | Donnée sensible non nécessaire au RDV             | `patients` (hashé)         |
-| `mutuelle`                                                              | Non utilisée dans l'application                   | **Supprimée**              |
-| `carte_bancaire`, `carte_titulaire`, `carte_expiration_*`, `carte_code` | Données financières → table dédiée                | `paiement` (partiellement) |
-| `options`, `immatriculation`, `formule`                                 | Redondants avec `parking_id` / `restaurant_id`    | FK vers tables dédiées     |
+| `mutuelle`                                                              | Non utilisée dans l'application                   | -- Supprimée --            |
+| `carte_bancaire`, `carte_titulaire`, `carte_expiration_*`, `carte_code` | Données financières, il faut une table dédiée     | `paiement` (partiellement) |
+| `options`, `immatriculation`, `formule`                                 | Redondants avec `parking_id` / `restaurant_id`    | FK vers des tables dédiées |
 
 La table `RendezVous` ne contient désormais que les champs médicaux (`specialite`, `date`, `time`, `motif`, `allergies`, `medicaments`, `antecedents`) et des clés étrangères.
 
@@ -39,13 +50,15 @@ Remplacement de `age INTEGER` par `date_naissance DATE` dans les tables `patient
 
 ### 3.1 Numéro de Sécurité Sociale (NSS)
 
-Le NSS est une donnée à caractère personnel hautement sensible (identifiant unique national). Il ne doit pas être stocké en clair.
+> \_"Le numéro de sécurité sociale ou NIR, qui contient les date et lieu de naissance, est un numéro unique : il permet donc d'identifier avec certitude la personne concernée. Pour enregistrer et utiliser le NIR, vous devez être autorisés par un texte juridique spécifique"\_ (CNIL - https://www.cnil.fr/fr/cnil-direct/question/quelles-condititions-peut-demander-le-numero-de-securite-sociale-nir)
+
+Etant donné qu'il n'est pas mentionné que l'hopital est autorisée à stocker le NSS, nous ne pouvons donc pas le stocker en clair.
 
 ### Correction
 
 Le NSS n'est jamais persisté. Seul son hash (`securite_sociale_hash`) est stocké.
 
-D'un point de vue technique on utilise un mutateur de l'ORM par défaut de Laravel (Eloquent) pour hasher le NSS avant de l'insérer dans la base de données.
+D'un point de vue technique on utilise un mutateur de l'ORM de Laravel (Eloquent) pour hasher le NSS avant de l'insérer dans la base de données.
 
 ```php
 // Patients.php — le NSS brut n'atteint jamais la BDD
@@ -55,7 +68,7 @@ public function setSecuriteSocialeAttribute(string $value): void
 }
 ```
 
-Le champ `securite_sociale_hash` est aussi déclaré dans `$hidden` pour ne jamais apparaître dans une sérialisation JSON/API.
+Le champ `securite_sociale_hash` est aussi déclaré en tant que `$hidden` dans le Model `Patient` pour ne jamais apparaître dans une sérialisation JSON/API.
 
 ### 3.2 Données bancaires
 
@@ -67,7 +80,7 @@ La norme PCI-DSS (Payment Card Industry Data Security Standard) interdit formell
 ### Corrections
 
 Ici on va complètement supprimer le code CVV/CVC car il ne doit pas être conservé.
-On va ensuite remplacer le numéro de carte bancaire par les 4 derniers chiffres et un hash du numéro complet.
+On va ensuite remplacer le numéro de carte bancaire par les 4 derniers chiffres et un hash du numéro complet _(garder les 4 derniers chiffres n'a pour seul intérêt de pouvoir indiquer à l'utilisateur quelle carte bancaire il a utilisé pour le paiement, sans pour autant compromettre ses données bancaires)_.
 
 | Champ initial                           | Remplacement                                        |
 | --------------------------------------- | --------------------------------------------------- |
@@ -90,7 +103,9 @@ _Cette approche est très basique et nous permettait simplement de proposer une 
 
 ## 4. Politique de rétention et droit à l'effacement (RGPD Art. 5(1)(e) & Art. 17)
 
-> _"Les données ne doivent pas être conservées plus longtemps que nécessaire."_
+> _"Les données à caractère personnel doivent être conservées sous une forme permettant l'identification des personnes concernées pendant une durée n'excédant pas celle nécessaire au regard des finalités pour lesquelles elles sont traitées; les données à caractère personnel peuvent être conservées pour des durées plus longues dans la mesure où elles seront traitées exclusivement à des fins archivistiques dans l'intérêt public, à des fins de recherche scientifique ou historique ou à des fins statistiques conformément à l'article 89, paragraphe 1, pour autant que soient mises en œuvre les mesures techniques et organisationnelles appropriées requises par le présent règlement afin de garantir les droits et libertés de la personne concernée (limitation de la conservation)"_ (RGPD Art. 5(1)(e))
+
+Pour l'article 17, nous proposons simplement un lien vers l'article de loi, afin d'éviter d'allourdir ce rapport : https://www.cnil.fr/fr/reglement-europeen-protection-donnees/chapitre3#Article17
 
 ### SoftDeletes (suppression logique)
 
@@ -131,7 +146,7 @@ Cette commande est planifiée pour tourner mensuellement dans le Kernel et peut 
 
 ---
 
-## 5. Éco-conception & Performance (Green IT)
+## 5. Éco-conception & Performance
 
 ### Réduction des types de colonnes
 
@@ -158,7 +173,7 @@ Cela permet de réduire :
 
 ### Suppression de l'autocomplétion `datalist`
 
-La version initiale chargeait tous les noms et prénoms de patients depuis la BDD pour alimenter un datalist HTML (autocomplétion). Cela constituait :
+La version initiale des views chargeait tous les noms et prénoms de patients depuis la BDD pour alimenter un datalist HTML (pour faire de l'autocomplétion). Cela constituait :
 
 1. Une fuite de données personnelles (RGPD) — des noms de patients visibles sans authentification
 2. Une requête inutile exécutée à chaque chargement de l'étape 1
@@ -169,12 +184,10 @@ Cette fonctionnalité a été supprimée.
 
 ## 6. Normes et références
 
-| Norme / Principe                                   | Application                                                              |
-| -------------------------------------------------- | ------------------------------------------------------------------------ |
-| **RGPD Art. 5(1)(b)** — Limitation des finalités   | Données liées strictement au RDV médical dans `RendezVous`               |
-| **RGPD Art. 5(1)(c)** — Minimisation               | Suppression des champs non nécessaires, pas de duplication               |
-| **RGPD Art. 5(1)(e)** — Limitation de conservation | Trait Prunable + rétention 5 ans                                         |
-| **RGPD Art. 17** — Droit à l'effacement            | SoftDeletes + commande de purge                                          |
-| **PCI-DSS** — Sécurité des paiements               | CVV jamais stocké, numéro CB hashé                                       |
-| **Green IT / Éco-conception**                      | Types de colonnes adaptés, pas de doublons, requêtes inutiles supprimées |
-| **CNIL** — Pseudonymisation                        | NSS hashé en SHA-256, `$hidden` sur les hashs                            |
+| Norme / Principe                                   | Application                                                |
+| -------------------------------------------------- | ---------------------------------------------------------- |
+| **RGPD Art. 5(1)(c)** — Minimisation               | Suppression des champs non nécessaires, pas de duplication |
+| **RGPD Art. 5(1)(e)** — Limitation de conservation | Trait Prunable + rétention 5 ans                           |
+| **RGPD Art. 17** — Droit à l'effacement            | SoftDeletes + commande de purge                            |
+| **CNIL** — Pseudonymisation                        | NSS hashé en SHA-256, `$hidden` sur les hashs              |
+| **PCI-DSS** — Sécurité des paiements               | CVV jamais stocké, numéro CB hashé                         |
